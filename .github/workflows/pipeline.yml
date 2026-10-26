@@ -1,0 +1,45 @@
+name: CI/CD Pipeline - Recetas Service
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test-and-coverage:
+    name: Pruebas Automatizadas y Cobertura (IE2)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Ejecutar Pruebas Unitarias y Validar Cobertura (>= 70%)
+        run: mvn clean verify -B
+
+      - name: Subir Reporte de Cobertura de JaCoCo como Artefacto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-coverage-report
+          path: target/site/jacoco/
+
+  docker-build:
+    name: Validacion Docker Build
+    needs: test-and-coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Validar construcción de la imagen Docker
+        run: docker build -t recetas-app:test .
