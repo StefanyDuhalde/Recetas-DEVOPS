@@ -60,7 +60,7 @@ jobs:
 
       - name: Subir Reporte JaCoCo
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jacoco-coverage-report
           path: target/site/jacoco/
@@ -90,7 +90,7 @@ jobs:
         run: docker save ${IMAGE_NAME}:${GITHUB_SHA} ${IMAGE_NAME}:${VERSION} -o recetas-app.tar
 
       - name: Subir imagen versionada
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: recetas-image
           path: recetas-app.tar
@@ -179,7 +179,7 @@ jobs:
 
       - name: Subir logs y metadatos del despliegue
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deploy-logs-${{ env.VERSION }}
           path: deploy-logs/
