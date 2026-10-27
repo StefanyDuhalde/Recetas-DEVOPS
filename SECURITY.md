@@ -24,5 +24,5 @@
 ## 5. Evidencia del Bloqueo y Remediacion
 1. **Deteccion:** En el primer run del job `security-analysis`, `snyk test` detectó vulnerabilidades HIGH/CRITICAL en dependencias transitivas de Spring Boot 3.3.5 (Tomcat embebido).
 2. **Bloqueo:** Snyk retorno `exit code 1`, el job fallo y se cancelaron `test-and-coverage` y `docker-build` (ver `docs/evidencias/snyk-bloqueo.png`).
-3. **Remediacion:** Se actualizo `spring-boot-starter-parent` a 3.5.7 y `springdoc` a 2.8.9.
+3. **Remediacion:** Se actualizo `spring-boot-starter-parent` a 4.0.9 y `springdoc` a 3.0.3.
 4. **Resultado:** El pipeline vuelve a ejecutarse en verde de punta a punta (ver `docs/evidencias/snyk-ok.png`).
