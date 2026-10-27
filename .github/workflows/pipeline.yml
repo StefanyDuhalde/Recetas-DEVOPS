@@ -7,25 +7,51 @@ on:
     branches: [ "main" ]
 
 jobs:
-  test-and-coverage:
-    name: Pruebas Automatizadas y Cobertura (IE2)
+  security-analysis:
+    name: DevSecOps - Analisis de Seguridad (Snyk)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout del código
+      - name: Checkout del codigo
         uses: actions/checkout@v4
 
-      - name: Configurar Java 21 (Temurin)
+      - name: Configurar Java 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
           cache: 'maven'
 
-      - name: Ejecutar Pruebas Unitarias y Validar Cobertura (>= 70%)
+      - name: Snyk - Analisis SAST (Codigo estatico)
+        run: npx snyk code test --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Snyk - Analisis SCA (Dependencias Maven)
+        run: npx snyk test --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  test-and-coverage:
+    name: Pruebas Automatizadas y Cobertura (IE2)
+    needs: security-analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Ejecutar Pruebas Unitarias y Cobertura (>= 70%)
         run: mvn clean verify -B
 
-      - name: Subir Reporte de Cobertura de JaCoCo como Artefacto
+      - name: Subir Reporte JaCoCo
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -38,8 +64,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout del código
+      - name: Checkout del codigo
         uses: actions/checkout@v4
 
-      - name: Validar construcción de la imagen Docker
+      - name: Validar construccion de la imagen Docker
         run: docker build -t recetas-app:test .

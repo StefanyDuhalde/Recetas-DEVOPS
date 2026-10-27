@@ -5,8 +5,8 @@ import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 public class RecetaSteps {
 
-    @LocalServerPort
+    @Value("${local.server.port}")
     private int port;
 
     @Autowired
