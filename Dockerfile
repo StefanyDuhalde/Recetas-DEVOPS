@@ -1,11 +1,12 @@
-# Etapa 1: Compilación de la aplicación Java con Maven
+# Etapa 1: Compilacion de la aplicacion Java con Maven
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
 COPY pom.xml .
+RUN mvn -B dependency:go-offline
 COPY src ./src
-RUN mvn clean package -DskipTests
+RUN mvn -B clean package -DskipTests
 
-# Etapa 2: Imagen final liviana de ejecución (JRE)
+# Etapa 2: Imagen final liviana de ejecucion (JRE)
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
@@ -18,8 +19,8 @@ USER appuser
 
 EXPOSE 8080
 
-# Verificación de salud del contenedor
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD java -version || exit 1
+# Verificacion de salud real: consulta /actuator/health (sin instalar curl)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf "GET /actuator/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && grep -q UP <&3' || exit 1
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: recetas-app
+  VERSION: v1.0.${{ github.run_number }}
+
 jobs:
   security-analysis:
     name: DevSecOps - Analisis de Seguridad (Snyk)
@@ -48,7 +55,7 @@ jobs:
           java-version: '21'
           cache: 'maven'
 
-      - name: Ejecutar Pruebas Unitarias y Cobertura (>= 70%)
+      - name: Ejecutar Pruebas Unitarias y Cobertura
         run: mvn clean verify -B
 
       - name: Subir Reporte JaCoCo
@@ -67,5 +74,125 @@ jobs:
       - name: Checkout del codigo
         uses: actions/checkout@v4
 
-      - name: Validar construccion de la imagen Docker
-        run: docker build -t recetas-app:test .
+      - name: Construir imagen versionada (SHA del commit + version)
+        run: |
+          docker build \
+            --label org.opencontainers.image.revision=${GITHUB_SHA} \
+            --label org.opencontainers.image.version=${VERSION} \
+            --label org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} \
+            --label org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            -t ${IMAGE_NAME}:${GITHUB_SHA} \
+            -t ${IMAGE_NAME}:${VERSION} \
+            .
+          docker images ${IMAGE_NAME}
+
+      - name: Exportar imagen como artefacto (build once, deploy many)
+        run: docker save ${IMAGE_NAME}:${GITHUB_SHA} ${IMAGE_NAME}:${VERSION} -o recetas-app.tar
+
+      - name: Subir imagen versionada
+        uses: actions/upload-artifact@v4
+        with:
+          name: recetas-image
+          path: recetas-app.tar
+          retention-days: 7
+
+  deploy:
+    name: Deploy Automatico (Entorno Cloud Simulado) (IE4)
+    needs: [ security-analysis, test-and-coverage, docker-build ]
+    # Solo despliega cuando el cambio ya esta en main (despues del merge del PR)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    environment:
+      name: produccion-simulada
+    concurrency:
+      group: deploy-produccion-simulada
+      cancel-in-progress: false
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+
+      - name: Descargar imagen construida y probada
+        uses: actions/download-artifact@v4
+        with:
+          name: recetas-image
+
+      - name: Cargar imagen versionada
+        run: |
+          docker load -i recetas-app.tar
+          docker images ${IMAGE_NAME}
+
+      - name: Deploy con Docker Compose (2 replicas + nginx)
+        run: docker compose up -d --no-build --wait --wait-timeout 180
+
+      - name: Verificacion post-deploy (smoke tests)
+        run: |
+          echo "== Health =="
+          curl --fail -s http://localhost:8080/actuator/health | tee health.json
+          echo
+          grep -q '"status":"UP"' health.json
+          echo "== API =="
+          curl --fail -s -o /dev/null -w "GET /api/recetas -> HTTP %{http_code}\n" http://localhost:8080/api/recetas
+          echo "== Balanceo entre replicas =="
+          for i in 1 2 3 4 5 6; do
+            curl -s -o /dev/null -D - http://localhost:8080/actuator/health | grep -i x-upstream
+          done
+
+      - name: Registrar trazabilidad del despliegue
+        if: always()
+        run: |
+          mkdir -p deploy-logs
+          docker compose ps > deploy-logs/compose-ps.txt
+          docker compose logs --no-color > deploy-logs/compose-logs.txt
+          docker inspect ${IMAGE_NAME}:${IMAGE_TAG} --format '{{json .Config.Labels}}' > deploy-logs/image-labels.json
+          cat > deploy-logs/deploy-info.json << INFO
+          {
+            "version": "${VERSION}",
+            "commit_sha": "${GITHUB_SHA}",
+            "image": "${IMAGE_NAME}:${IMAGE_TAG}",
+            "branch": "${GITHUB_REF_NAME}",
+            "actor": "${GITHUB_ACTOR}",
+            "run_id": "${GITHUB_RUN_ID}",
+            "run_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}",
+            "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          INFO
+          cat deploy-logs/deploy-info.json
+          {
+            echo "## Despliegue ${VERSION}"
+            echo "| Campo | Valor |"
+            echo "|---|---|"
+            echo "| Version | \`${VERSION}\` |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Imagen | \`${IMAGE_NAME}:${IMAGE_TAG}\` |"
+            echo "| Autor | ${GITHUB_ACTOR} |"
+            echo "| Entorno | produccion-simulada |"
+            echo ""
+            echo '```'
+            cat deploy-logs/compose-ps.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir logs y metadatos del despliegue
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-logs-${{ env.VERSION }}
+          path: deploy-logs/
+
+      - name: Crear tag y release de la version desplegada
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${VERSION}" \
+            --target "${GITHUB_SHA}" \
+            --title "Recetas ${VERSION}" \
+            --notes "Despliegue automatico en produccion-simulada. Commit: ${GITHUB_SHA}. Imagen: ${IMAGE_NAME}:${IMAGE_TAG}. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Apagar entorno simulado
+        if: always()
+        run: docker compose down

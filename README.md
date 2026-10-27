@@ -9,6 +9,107 @@ Microservicio correspondiente al **caso caso07 — MediCare** (Telemedicina) de 
 | Calidad | JaCoCo cobertura LINE 100% · Cucumber (BDD) alineado a endpoints REST |
 | Entrega | Docker / Docker Compose |
 
+## Entrega EP2 — Mapa de evaluación
+
+| Indicador | Qué se implementó | Dónde verlo |
+|-----------|-------------------|-------------|
+| **IE1** — Contenedores | Dockerfile multi-stage (Maven → JRE), usuario no-root, healthcheck real | [`Dockerfile`](Dockerfile) · [Evidencias Fase 1](docs/evidencias/EVIDENCIAS.md#fase-1--contenedorización-ie1) |
+| **IE2** — Pruebas en CI | JUnit + MockMvc + Cucumber, cobertura JaCoCo ≥ 70% | [`pipeline.yml`](.github/workflows/pipeline.yml) · [Evidencias Fase 2](docs/evidencias/EVIDENCIAS.md#fase-2--pruebas-automatizadas-en-ci-ie2) |
+| **IE3** — Seguridad y bloqueo | Dependabot + Snyk SAST/SCA con bloqueo HIGH/CRITICAL, recursos y réplicas | [`SECURITY.md`](SECURITY.md) · [`dependabot.yml`](.github/dependabot.yml) · [Evidencias Fase 3](docs/evidencias/EVIDENCIAS.md#fase-3--seguridad-y-bloqueo-en-el-pipeline-ie3) |
+| **IE4** — Deploy y trazabilidad | Deploy automático tras seguridad y tests, imagen por SHA, Release `v1.0.N`, logs | [Pipeline CI/CD](#pipeline-cicd-ep2) · [Trazabilidad](#trazabilidad) · [Evidencias Fase 4](docs/evidencias/EVIDENCIAS.md#fase-4--despliegue-automático-y-trazabilidad-ie4) |
+| **IE5** — Orquestación | Docker Compose: 2 réplicas + nginx balanceador, límites de recursos, healthchecks | [`docker-compose.yml`](docker-compose.yml) · [`nginx.conf`](nginx/nginx.conf) |
+| Reflexiones y uso de IA | Declaración de IA y reflexión individual de cada integrante (sin IA) | [Uso de IA](#uso-de-inteligencia-artificial-ep2) · [Reflexiones](#reflexiones-individuales-ep2) |
+
+## Pipeline CI/CD (EP2)
+
+```mermaid
+flowchart LR
+    A[Push / Pull Request] --> B[Snyk SAST + SCA<br/>bloquea HIGH/CRITICAL]
+    B --> C[Tests JUnit + Cucumber<br/>+ cobertura JaCoCo]
+    C --> D[Build imagen Docker<br/>tag SHA + v1.0.N]
+    D -->|solo push a main| E[Deploy Docker Compose<br/>2 replicas + nginx]
+    E --> F[Smoke tests<br/>/actuator/health + /api/recetas]
+    F --> G[Release v1.0.N<br/>+ logs como artefacto]
+```
+
+| Etapa | Job | Qué hace | Si falla |
+|-------|-----|----------|----------|
+| 1. Seguridad | `security-analysis` | Snyk Code (SAST) y Snyk Open Source (SCA) con `--severity-threshold=high` | Detiene todo el pipeline |
+| 2. Calidad | `test-and-coverage` | `mvn clean verify`: pruebas unitarias, de controlador y BDD (Cucumber) + umbral JaCoCo | No se construye la imagen |
+| 3. Build | `docker-build` | Imagen multi-stage etiquetada con el SHA del commit y `v1.0.N`, con labels OCI; se guarda como artefacto | No se despliega |
+| 4. Deploy | `deploy` | Solo en `push` a `main`: carga **la misma imagen probada**, levanta Compose, ejecuta smoke tests y publica release | El release no se crea y quedan los logs |
+
+## Despliegue automático (IE4)
+
+- **Entorno:** cloud simulado en el runner de GitHub Actions (`ubuntu-latest`), registrado como entorno `produccion-simulada` (pestaña *Environments / Deployments*).
+- **Condición:** el job `deploy` depende (`needs`) de seguridad, pruebas y build; además solo corre tras el merge a `main`. En los PR aparece como *skipped*.
+- **Topología:** 2 réplicas de `recetas-svc` (límite 0.5 CPU / 512 MB c/u) detrás de un **nginx** que balancea la carga (round-robin). Compose espera a que todos los servicios estén *healthy* (`--wait`).
+- **Verificación post-deploy:** `/actuator/health` debe responder `UP`, `/api/recetas` debe responder 200, y se comprueba que ambas réplicas atienden peticiones (header `X-Upstream`).
+- **Ejecución local equivalente:** `docker compose up -d --build --wait` → http://localhost:8080
+
+### Parámetros de escalabilidad (`docker-compose.yml`)
+
+| Parámetro | Valor | Propósito |
+|-----------|-------|-----------|
+| Réplicas | 2 | Alta disponibilidad: si una cae, la otra sigue atendiendo |
+| Límite CPU / RAM | 0.50 core / 512 MB por réplica | Evita que una réplica consuma todos los recursos del host |
+| Reserva CPU / RAM | 0.25 core / 256 MB por réplica | Garantiza recursos mínimos para arrancar |
+| Balanceador | nginx (round-robin) | Distribuye las peticiones entre réplicas |
+| Healthcheck | `/actuator/health` cada 15 s | nginx solo arranca cuando las réplicas están *healthy* |
+| Usuario | `appuser` (no-root) | Reduce el impacto ante una vulnerabilidad |
+
+## Trazabilidad
+
+Cada despliegue se puede rastrear hasta el commit exacto que lo originó:
+
+| Elemento | Cómo se vincula al commit |
+|----------|---------------------------|
+| Imagen Docker | Tag `recetas-app:<GITHUB_SHA>` y `recetas-app:v1.0.<run_number>` |
+| Metadatos de la imagen | Labels OCI `org.opencontainers.image.revision` (SHA) y `.version` |
+| Release / Tag Git | `v1.0.N` creado automáticamente apuntando al SHA desplegado |
+| Logs del despliegue | Artefacto `deploy-logs-v1.0.N` (`deploy-info.json`, `compose-ps.txt`, `compose-logs.txt`, `image-labels.json`) |
+| Resumen del run | Tabla con versión, commit, imagen y autor en el *Summary* del run |
+| Código | Ramas `feature/*` + Pull Request + Conventional Commits |
+
+## Cómo se garantiza la calidad
+
+1. **Seguridad primero:** ningún cambio con vulnerabilidades HIGH/CRITICAL no gestionadas avanza (ver [`SECURITY.md`](SECURITY.md)).
+2. **Pruebas obligatorias:** unitarias (servicio), de integración (controlador con MockMvc) y BDD (Cucumber); el build falla si alguna falla o si la cobertura baja del umbral.
+3. **Build once, deploy many:** se despliega exactamente la imagen que pasó las pruebas, no una reconstruida.
+4. **Verificación post-deploy:** si los smoke tests fallan, el job falla y no se publica release.
+5. **Revisión por PR:** todo cambio entra a `main` mediante Pull Request con el pipeline en verde.
+6. **Dependencias al día:** Dependabot revisa semanalmente Maven y GitHub Actions y abre PRs automáticos; cada PR pasa por el mismo pipeline antes de poder integrarse.
+
+## Uso de Inteligencia Artificial (EP2)
+
+En este encargo se utilizaron herramientas de IA generativa (Claude/Gemini) como **apoyo**, no como reemplazo del trabajo del equipo.
+
+- Estructuración de Pipeline CI/CD: Asistencia en la sintaxis de archivos YAML para GitHub Actions (definición de jobs, steps, environment variables y triggers).
+
+- Diagnóstico y Corrección de Errores (Troubleshooting): Depuración de fallos de compilación en Maven, resolución de errores de autenticación/módulos en Snyk (SCA/SAST), y mitigación de vulnerabilidades mediante parches de dependencias en pom.xml.
+
+- Configuración de Docker y Docker Compose: Asistencia en la sintaxis de límites de recursos (limits, reservations), estrategias de escalabilidad y directivas de seguridad (usuario appuser, HEALTHCHECK).
+
+**Validación de Código**: Todo el código, script y archivo de configuración generado o sugerido por la IA fue revisado, probado, ejecutado y validado manualmente por la estudiante en un entorno local (Git Bash / Docker) y en la plataforma GitHub Actions.
+
+## Reflexiones individuales (EP2)
+
+### Reflexión individual — Stefany Duhalde
+<!-- Escribe con tus palabras, sin IA. Preguntas guía:
+     - ¿Qué parte del pipeline implementaste o te costó más?
+     - ¿Qué aprendiste del bloqueo de Snyk y de las 51 vulnerabilidades?
+     - ¿Qué entendiste ahora sobre trazabilidad que antes no?
+     - ¿Qué harías distinto en un proyecto real? -->
+
+_(Escribir aquí)_
+
+### Reflexión individual — Tais
+<!-- Escribe con tus palabras, sin IA. Mismas preguntas guía. -->
+
+_(Escribir aquí)_
+
+# README Entrega Evaluación 1 
+
 ## Responsabilidad (SRP)
 
 administra los datos y la lógica del dominio de Recetas del caso caso07 (MediCare). Su base de datos es una **H2 en memoria** (un solo microservicio por base), cumpliendo aislamiento de datos por dominio.
@@ -106,3 +207,5 @@ Comandos y flujo de Git: Nos ayudó a resolver dudas con los comandos en la term
 
 
 GitHub Actions: Fue una guía para revisar la sintaxis de los archivos YAML en la carpeta .github/workflows y asegurarnos de que la integración continua corriera sin errores.
+
+
