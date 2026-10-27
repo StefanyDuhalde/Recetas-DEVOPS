@@ -47,17 +47,6 @@ flowchart LR
 - **Verificación post-deploy:** `/actuator/health` debe responder `UP`, `/api/recetas` debe responder 200, y se comprueba que ambas réplicas atienden peticiones (header `X-Upstream`).
 - **Ejecución local equivalente:** `docker compose up -d --build --wait` → http://localhost:8080
 
-### Parámetros de escalabilidad (`docker-compose.yml`)
-
-| Parámetro | Valor | Propósito |
-|-----------|-------|-----------|
-| Réplicas | 2 | Alta disponibilidad: si una cae, la otra sigue atendiendo |
-| Límite CPU / RAM | 0.50 core / 512 MB por réplica | Evita que una réplica consuma todos los recursos del host |
-| Reserva CPU / RAM | 0.25 core / 256 MB por réplica | Garantiza recursos mínimos para arrancar |
-| Balanceador | nginx (round-robin) | Distribuye las peticiones entre réplicas |
-| Healthcheck | `/actuator/health` cada 15 s | nginx solo arranca cuando las réplicas están *healthy* |
-| Usuario | `appuser` (no-root) | Reduce el impacto ante una vulnerabilidad |
-
 ## Trazabilidad
 
 Cada despliegue se puede rastrear hasta el commit exacto que lo originó:
@@ -80,6 +69,21 @@ Cada despliegue se puede rastrear hasta el commit exacto que lo originó:
 5. **Revisión por PR:** todo cambio entra a `main` mediante Pull Request con el pipeline en verde.
 6. **Dependencias al día:** Dependabot revisa semanalmente Maven y GitHub Actions y abre PRs automáticos; cada PR pasa por el mismo pipeline antes de poder integrarse.
 
+## Orquestación de contenedores (IE5)
+
+Se eligió **Docker Compose** como orquestador: es suficiente para el tamaño del servicio y se ejecuta igual en local y en el pipeline. Configuración en [`docker-compose.yml`](docker-compose.yml).
+
+| Parámetro | Valor | Propósito |
+|-----------|-------|-----------|
+| Réplicas | 2 | Alta disponibilidad: si una cae, la otra sigue atendiendo |
+| Límite CPU / RAM | 0.50 core / 512 MB por réplica | Evita que una réplica consuma todos los recursos del host |
+| Reserva CPU / RAM | 0.25 core / 256 MB por réplica | Garantiza recursos mínimos para arrancar |
+| Balanceador | nginx (round-robin) | Distribuye las peticiones entre réplicas |
+| Healthcheck | `/actuator/health` cada 15 s | Docker detecta si cada réplica responde de verdad (no solo si está encendida); su estado se ve en `docker compose ps` |
+| Usuario | `appuser` (no-root) | Reduce el impacto ante una vulnerabilidad |
+| Autorrecuperación | `restart: unless-stopped` | Si una réplica se cae, Docker la reinicia automáticamente |
+| Arranque ordenado | `depends_on: condition: service_healthy` | nginx solo arranca cuando las réplicas están sanas |
+
 ## Uso de Inteligencia Artificial (EP2)
 
 En este encargo se utilizaron herramientas de IA generativa (Claude/Gemini) como **apoyo**, no como reemplazo del trabajo del equipo.
@@ -95,18 +99,7 @@ En este encargo se utilizaron herramientas de IA generativa (Claude/Gemini) como
 ## Reflexiones individuales (EP2)
 
 ### Reflexión individual — Stefany Duhalde
-<!-- Escribe con tus palabras, sin IA. Preguntas guía:
-     - ¿Qué parte del pipeline implementaste o te costó más?
-     - ¿Qué aprendiste del bloqueo de Snyk y de las 51 vulnerabilidades?
-     - ¿Qué entendiste ahora sobre trazabilidad que antes no?
-     - ¿Qué harías distinto en un proyecto real? -->
-
-_(Escribir aquí)_
-
-### Reflexión individual — Tais
-<!-- Escribe con tus palabras, sin IA. Mismas preguntas guía. -->
-
-_(Escribir aquí)_
+A decir verdad, este trabajo me costó mucho... Tuve muchos errores que me dejaron parada varias veces. Uno de ellos fue cuando la verificación de seguridad de Snyk fallaba en varios Pull Requests. Me costó entender por qué el job de Dependabot no veía el token, y era porque había creado el secret de Dependabot vacío. Una vez editado eso, logré avanzar a las otras verificaciones de seguridad con normalidad. Por un lado puede ser fastidioso no poder avanzar con el merge, pero por el otro lado se evidencia la importancia de tener estas distintas etapas de seguridad, para evitar que al hacer merge a la rama main, se integren códigos de mala calidad o dependencias con vulnerabilidades. También aprendí lo que es la trazabilidad, que básicamente es dejar pistas conectadas por cada deploy, y así saber quién hizo un cambio, quién revisó, qué checks pasaron, etc. Para una próxima entrega intentaría ser más cautelosa con la creación de secrets, ya que realmente fue un paso que generó retrasos en el proyecto.
 
 # README Entrega Evaluación 1 
 

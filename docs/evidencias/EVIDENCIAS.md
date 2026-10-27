@@ -8,7 +8,7 @@ Microservicio **Recetas** (Spring Boot / Java 21) — Pipeline CI/CD con GitHub 
 | 2 | IE2 — Pruebas automatizadas en CI | [Ir a Fase 2](#fase-2--pruebas-automatizadas-en-ci-ie2) |
 | 3 | IE3 — Seguridad y bloqueo en el pipeline | [Ir a Fase 3](#fase-3--seguridad-y-bloqueo-en-el-pipeline-ie3) |
 | 4 | IE4 — Despliegue automático y trazabilidad | [Ir a Fase 4](#fase-4--despliegue-automático-y-trazabilidad-ie4) |
-
+| 5 | IE5 — Orquestación de contenedores | [Ir a Fase 5](#fase-5--orquestación-de-contenedores-ie5) |
 ---
 
 ## Fase 1 — Contenedorización (IE1)
@@ -119,3 +119,15 @@ Cada despliegue genera un Release `v1.0.N` apuntando al commit desplegado.
 ### 4.7 Prueba local del entorno (2 réplicas + nginx)
 
 ![Docker Compose local](f4-compose-local.png)
+
+---
+
+## Fase 5 — Orquestación de contenedores (IE5)
+
+**Objetivo:** orquestar el microservicio con Docker Compose de forma estable y escalable: réplicas, balanceo, límites de recursos, healthchecks y reinicio automático. Detalle en el [`README.md`](../../README.md#orquestación-de-contenedores-ie5).
+
+### 5.1 Dos réplicas + balanceador nginx, todos healthy
+![docker compose ps](f4-compose-local.png)
+
+### 5.2 Balanceo de carga verificado en el pipeline
+![Balanceo entre réplicas](f4-smoke-tests.png)
