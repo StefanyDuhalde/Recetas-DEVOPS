@@ -7,6 +7,7 @@ Microservicio **Recetas** (Spring Boot / Java 21) — Pipeline CI/CD con GitHub 
 | 1 | IE1 — Contenedores e imágenes optimizadas | [Ir a Fase 1](#fase-1--contenedorización-ie1) |
 | 2 | IE2 — Pruebas automatizadas en CI | [Ir a Fase 2](#fase-2--pruebas-automatizadas-en-ci-ie2) |
 | 3 | IE3 — Seguridad y bloqueo en el pipeline | [Ir a Fase 3](#fase-3--seguridad-y-bloqueo-en-el-pipeline-ie3) |
+| 4 | IE4 — Despliegue automático y trazabilidad | [Ir a Fase 4](#fase-4--despliegue-automático-y-trazabilidad-ie4) |
 
 ---
 
@@ -73,3 +74,48 @@ La vulnerabilidad sin parche se gestionó con una excepción en `.snyk` con just
 ![Pipeline en verde tras la remediación](f3-snyk-ok.png)
 
 **Resultado:** el pipeline actúa como puerta de seguridad. Ningún cambio con vulnerabilidades HIGH/CRITICAL no gestionadas avanza a pruebas, build ni merge a `main`.
+
+### 3.4 Dependabot activo
+Dependabot abre automáticamente Pull Requests de actualización para dependencias Maven y GitHub Actions. Cada PR pasa por el mismo pipeline (Snyk, pruebas y build): solo se integra a `main` si queda en verde.
+
+![Pull Requests automáticos de Dependabot](f3-dependabot-prs.png)
+
+## Fase 4 — Despliegue automático y trazabilidad (IE4)
+
+**Objetivo:** desplegar automáticamente en un entorno cloud simulado solo después de que pasen seguridad, pruebas y build, con trazabilidad completa hasta el commit. Detalle en el [`README.md`](../../README.md#despliegue-automático-ie4).
+
+### 4.1 El deploy no corre en Pull Requests
+En los PR se ejecutan seguridad, pruebas y build; el job `deploy` queda en *skipped* hasta el merge a `main`.
+
+![Deploy skipped en PR](f4-pr-deploy-skipped.png)
+
+### 4.2 Pipeline completo en main
+Tras el merge, los 4 jobs se ejecutan en secuencia: Seguridad → Pruebas → Build → Deploy.
+
+![Run de main con deploy](f4-deploy-run.png)
+
+### 4.3 Verificación post-deploy
+`/actuator/health` responde `UP`, `/api/recetas` responde 200 y ambas réplicas atienden peticiones.
+
+![Smoke tests post-deploy](f4-smoke-tests.png)
+
+### 4.4 Trazabilidad: versión ligada al commit
+El resumen del run muestra la versión, el SHA del commit y la imagen desplegada.
+
+![Summary del despliegue](f4-summary.png)
+
+Cada despliegue genera un Release `v1.0.N` apuntando al commit desplegado.
+
+![Release automático](f4-release.png)
+
+### 4.5 Logs y artefactos de auditoría
+
+![Artefactos del despliegue](f4-artifacts.png)
+
+### 4.6 Historial de despliegues
+
+![Entorno produccion-simulada](f4-environment.png)
+
+### 4.7 Prueba local del entorno (2 réplicas + nginx)
+
+![Docker Compose local](f4-compose-local.png)
