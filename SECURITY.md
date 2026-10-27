@@ -26,3 +26,18 @@
 2. **Bloqueo:** Snyk retorno `exit code 1`, el job fallo y se cancelaron `test-and-coverage` y `docker-build` (ver `docs/evidencias/snyk-bloqueo.png`).
 3. **Remediacion:** Se actualizo `spring-boot-starter-parent` a 4.0.9 y `springdoc` a 3.0.3.
 4. **Resultado:** El pipeline vuelve a ejecutarse en verde de punta a punta (ver `docs/evidencias/snyk-ok.png`).
+
+## 6. Gestion de Excepciones (Riesgo Aceptado)
+Cuando una vulnerabilidad HIGH/CRITICAL **no tiene version corregida disponible**, se permite una excepcion temporal en el archivo `.snyk` bajo estas condiciones:
+- Justificacion tecnica de por que no es explotable en este servicio.
+- Fecha de vencimiento obligatoria (maximo 90 dias). Al vencer, Snyk vuelve a bloquear el pipeline.
+- Registro en esta tabla.
+
+| ID Snyk | Componente | Motivo | Vence |
+|---------|-----------|--------|-------|
+| SNYK-JAVA-ORGGLASSFISHJAXB-20883142 | jaxb-core 4.0.9 (via hibernate-core) | Sin parche disponible; la app no procesa XML externo (usa anotaciones JPA) | 2027-01-26 |
+
+### Historial de remediacion
+1. Spring Boot 3.3.5: CVE criticas en Tomcat embebido -> pipeline bloqueado.
+2. Spring Boot 3.5.7: 51 vulnerabilidades (linea 3.x sin soporte OSS) -> pipeline bloqueado.
+3. Spring Boot 4.0.9 + springdoc 3.0.3: 1 vulnerabilidad sin parche -> excepcion documentada -> pipeline en verde.

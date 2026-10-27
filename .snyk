@@ -1,0 +1,7 @@
+# Snyk (https://snyk.io) policy file
+version: v1.25.0
+ignore:
+  SNYK-JAVA-ORGGLASSFISHJAXB-20883142:
+    - '*':
+        reason: 'Vulnerabilidad sin parche disponible en org.glassfish.jaxb:jaxb-core (Unfixable upstream)'
+        expires: 2026-12-31T00:00:00.000Z
