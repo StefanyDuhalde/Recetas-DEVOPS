@@ -56,7 +56,7 @@ fi
 echo "== 2. Vulnerabilidades criticas =="
 echo "" >> "$REPORT"
 echo "## 2. Vulnerabilidades CRITICAL en dependencias" >> "$REPORT"
-npx --yes snyk test --severity-threshold=critical --json > snyk-critical.json
+npx --yes snyk@1.1309.0 test --severity-threshold=critical --json > snyk-critical.json
 RC=$?
 case "$RC" in
   0)

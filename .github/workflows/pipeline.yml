@@ -30,12 +30,12 @@ jobs:
           cache: 'maven'
 
       - name: Snyk - Analisis SAST (Codigo estatico)
-        run: npx snyk code test --severity-threshold=high
+        run: npx snyk@1.1309.0 code test --severity-threshold=high
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
       - name: Snyk - Analisis SCA (Dependencias Maven)
-        run: npx snyk test --severity-threshold=high
+        run: npx snyk@1.1309.0 test --severity-threshold=high
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
