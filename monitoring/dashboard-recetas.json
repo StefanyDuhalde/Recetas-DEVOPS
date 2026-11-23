@@ -1,0 +1,348 @@
+{
+  "start": "-PT3H",
+  "widgets": [
+    {
+      "type": "text",
+      "x": 0,
+      "y": 0,
+      "width": 24,
+      "height": 2,
+      "properties": {
+        "markdown": "# Recetas Service — Observabilidad\nMicroservicio en **Amazon EKS** (`recetas-eks`) · métricas del **pipeline CI/CD** publicadas en cada despliegue."
+      }
+    },
+    {
+      "type": "text",
+      "x": 0,
+      "y": 2,
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## Métricas clave (IE3)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 3,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Uso de CPU de los pods (% del límite)",
+        "region": "__REGION__",
+        "view": "timeSeries",
+        "stat": "Average",
+        "period": 60,
+        "metrics": [
+          [
+            "ContainerInsights",
+            "pod_cpu_utilization_over_pod_limit",
+            "ClusterName",
+            "__CLUSTER__",
+            "Namespace",
+            "recetas",
+            "PodName",
+            "recetas-svc",
+            {
+              "label": "CPU %"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "min": 0,
+            "max": 100
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 8,
+      "y": 3,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Uso de memoria de los pods (% del límite)",
+        "region": "__REGION__",
+        "view": "timeSeries",
+        "stat": "Average",
+        "period": 60,
+        "metrics": [
+          [
+            "ContainerInsights",
+            "pod_memory_utilization_over_pod_limit",
+            "ClusterName",
+            "__CLUSTER__",
+            "Namespace",
+            "recetas",
+            "PodName",
+            "recetas-svc",
+            {
+              "label": "Memoria %"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "min": 0,
+            "max": 100
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 16,
+      "y": 3,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Errores registrados: HTTP 5xx y peticiones",
+        "region": "__REGION__",
+        "view": "timeSeries",
+        "stat": "Sum",
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ELB",
+            "HTTPCode_Backend_5XX",
+            "LoadBalancerName",
+            "__ELB__",
+            {
+              "label": "Errores 5xx",
+              "color": "#d62728"
+            }
+          ],
+          [
+            "AWS/ELB",
+            "RequestCount",
+            "LoadBalancerName",
+            "__ELB__",
+            {
+              "label": "Peticiones"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 9,
+      "width": 6,
+      "height": 6,
+      "properties": {
+        "title": "Cobertura de pruebas (%)",
+        "region": "__REGION__",
+        "view": "singleValue",
+        "stat": "Maximum",
+        "period": 86400,
+        "metrics": [
+          [
+            "Recetas/CICD",
+            "CoberturaPruebas",
+            "Servicio",
+            "recetas-svc",
+            {
+              "label": "Cobertura"
+            }
+          ]
+        ],
+        "sparkline": true,
+        "setPeriodToTimeRange": false
+      }
+    },
+    {
+      "type": "metric",
+      "x": 6,
+      "y": 9,
+      "width": 6,
+      "height": 6,
+      "properties": {
+        "title": "Tiempo de despliegue (s)",
+        "region": "__REGION__",
+        "view": "singleValue",
+        "stat": "Maximum",
+        "period": 86400,
+        "metrics": [
+          [
+            "Recetas/CICD",
+            "TiempoDespliegue",
+            "Servicio",
+            "recetas-svc",
+            {
+              "label": "Último despliegue"
+            }
+          ]
+        ],
+        "sparkline": true,
+        "setPeriodToTimeRange": false
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 9,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Historial: cobertura y tiempo de despliegue",
+        "region": "__REGION__",
+        "view": "timeSeries",
+        "stat": "Maximum",
+        "period": 300,
+        "metrics": [
+          [
+            "Recetas/CICD",
+            "CoberturaPruebas",
+            "Servicio",
+            "recetas-svc",
+            {
+              "label": "Cobertura (%)"
+            }
+          ],
+          [
+            "Recetas/CICD",
+            "TiempoDespliegue",
+            "Servicio",
+            "recetas-svc",
+            {
+              "label": "Tiempo de despliegue (s)",
+              "yAxis": "right"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "type": "text",
+      "x": 0,
+      "y": 15,
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## Monitoreo del microservicio (IE1)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 16,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Disponibilidad: destinos saludables del Load Balancer",
+        "region": "__REGION__",
+        "view": "timeSeries",
+        "stat": "Minimum",
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ELB",
+            "HealthyHostCount",
+            "LoadBalancerName",
+            "__ELB__",
+            {
+              "label": "Saludables",
+              "color": "#2ca02c"
+            }
+          ],
+          [
+            "AWS/ELB",
+            "UnHealthyHostCount",
+            "LoadBalancerName",
+            "__ELB__",
+            {
+              "label": "No saludables",
+              "color": "#d62728"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 8,
+      "y": 16,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Pods del microservicio en ejecución",
+        "region": "__REGION__",
+        "view": "timeSeries",
+        "stat": "Average",
+        "period": 60,
+        "metrics": [
+          [
+            "ContainerInsights",
+            "service_number_of_running_pods",
+            "ClusterName",
+            "__CLUSTER__",
+            "Namespace",
+            "recetas",
+            "Service",
+            "recetas-svc",
+            {
+              "label": "Pods"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 16,
+      "y": 16,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Errores en los logs (líneas ERROR)",
+        "region": "__REGION__",
+        "view": "timeSeries",
+        "stat": "Sum",
+        "period": 300,
+        "metrics": [
+          [
+            "Recetas/App",
+            "ErroresLog",
+            {
+              "label": "Líneas ERROR",
+              "color": "#9467bd"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "type": "alarm",
+      "x": 0,
+      "y": 22,
+      "width": 24,
+      "height": 3,
+      "properties": {
+        "title": "Estado de las alarmas",
+        "alarms": [
+          "arn:aws:cloudwatch:__REGION__:__ACCOUNT__:alarm:recetas-disponibilidad",
+          "arn:aws:cloudwatch:__REGION__:__ACCOUNT__:alarm:recetas-errores-5xx",
+          "arn:aws:cloudwatch:__REGION__:__ACCOUNT__:alarm:recetas-errores-log",
+          "arn:aws:cloudwatch:__REGION__:__ACCOUNT__:alarm:recetas-cpu-alta",
+          "arn:aws:cloudwatch:__REGION__:__ACCOUNT__:alarm:recetas-memoria-alta"
+        ]
+      }
+    },
+    {
+      "type": "log",
+      "x": 0,
+      "y": 25,
+      "width": 24,
+      "height": 8,
+      "properties": {
+        "title": "Logs del microservicio (últimos 100)",
+        "region": "__REGION__",
+        "view": "table",
+        "query": "SOURCE '/aws/containerinsights/__CLUSTER__/application' | fields @timestamp, kubernetes.pod_name as pod, log | filter kubernetes.namespace_name = 'recetas' | sort @timestamp desc | limit 100"
+      }
+    }
+  ]
+}

@@ -5,4 +5,5 @@ target/
 *.iml
 .vscode/
 .DS_Store
-.env
+.envaudit-report.md
+snyk-critical.json
