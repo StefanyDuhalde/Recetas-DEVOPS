@@ -1,0 +1,48 @@
+# Microservicio Recetas en Amazon EKS.
+# __IMAGE__, __VERSION__ y __COMMIT_SHA__ los reemplaza el pipeline en cada despliegue (trazabilidad).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recetas-svc
+  namespace: recetas
+  labels:
+    app: recetas-svc
+  annotations:
+    kubernetes.io/change-cause: "__VERSION__ commit __COMMIT_SHA__"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: recetas-svc
+  template:
+    metadata:
+      labels:
+        app: recetas-svc
+        version: "__VERSION__"
+      annotations:
+        commit-sha: "__COMMIT_SHA__"
+    spec:
+      containers:
+        - name: recetas-svc
+          image: "__IMAGE__"
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15

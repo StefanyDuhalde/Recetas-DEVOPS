@@ -39,14 +39,39 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-  test-and-coverage:
-    name: Pruebas Automatizadas y Cobertura (IE2)
+  audit:
+    name: Auditoria de Cumplimiento (secretos y CVE criticos)
     needs: security-analysis
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout del codigo
         uses: actions/checkout@v7
+
+      - name: Ejecutar auditoria propia (audit/audit.sh)
+        run: bash audit/audit.sh
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Subir reporte de auditoria
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reporte-auditoria
+          path: audit-report.md
+
+  test-and-coverage:
+    name: Pruebas Automatizadas y Cobertura (IE2)
+    needs: audit
+    runs-on: ubuntu-latest
+    outputs:
+      cobertura: ${{ steps.cobertura.outputs.porcentaje }}
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Configurar Java 21
         uses: actions/setup-java@v6
@@ -64,6 +89,23 @@ jobs:
         with:
           name: jacoco-coverage-report
           path: target/site/jacoco/
+
+      - name: Calcular cobertura de pruebas (para el dashboard)
+        id: cobertura
+        run: |
+          COV=$(awk -F, 'NR>1 {m+=$8; c+=$9} END {if (m+c>0) printf "%.2f", c*100/(m+c); else print 0}' target/site/jacoco/jacoco.csv)
+          echo "porcentaje=$COV" >> "$GITHUB_OUTPUT"
+          echo "Cobertura de lineas: ${COV}%" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: SonarQube Cloud - analisis y Quality Gate
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }} \
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }} \
+            -Dsonar.qualitygate.wait=true
 
   docker-build:
     name: Validacion Docker Build
@@ -98,7 +140,7 @@ jobs:
 
   deploy:
     name: Deploy Automatico (Entorno Cloud Simulado) (IE4)
-    needs: [ security-analysis, test-and-coverage, docker-build ]
+    needs: [ security-analysis, audit, test-and-coverage, docker-build ]
     # Solo despliega cuando el cambio ya esta en main (despues del merge del PR)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -196,3 +238,128 @@ jobs:
       - name: Apagar entorno simulado
         if: always()
         run: docker compose down
+
+  deploy-eks:
+    name: Deploy a Kubernetes en AWS EKS (EP3)
+    # Solo llega aqui lo que paso TODAS las puertas anteriores, y requiere aprobacion de un revisor
+    needs: [ test-and-coverage, deploy ]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: produccion-eks
+    concurrency:
+      group: deploy-eks
+      cancel-in-progress: false
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+
+    steps:
+      - name: Registrar inicio del despliegue
+        run: echo "INICIO=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Checkout del codigo
+        uses: actions/checkout@v7
+
+      - name: Validar credenciales AWS (sesion de Learner Lab activa)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+        run: |
+          if ! aws sts get-caller-identity --region "$AWS_REGION" > /dev/null; then
+            echo "::error::Credenciales AWS vencidas. Inicia el Learner Lab y actualiza los secrets AWS_*."
+            exit 1
+          fi
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Descargar la imagen construida y probada
+        uses: actions/download-artifact@v4
+        with:
+          name: recetas-image
+
+      - name: Publicar imagen en Amazon ECR
+        run: |
+          docker load -i recetas-app.tar
+          aws ecr describe-repositories --repository-names "$IMAGE_NAME" > /dev/null 2>&1 \
+            || aws ecr create-repository --repository-name "$IMAGE_NAME" > /dev/null
+          REGISTRY="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${AWS_REGION}.amazonaws.com"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
+          docker tag "${IMAGE_NAME}:${GITHUB_SHA}" "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
+          docker push "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
+          echo "IMAGE=${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Conectar kubectl al cluster EKS
+        run: |
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          kubectl get nodes
+
+      - name: Desplegar microservicio (kubectl apply)
+        run: |
+          for f in k8s/*.yaml; do
+            sed -e "s|__IMAGE__|$IMAGE|g" -e "s|__VERSION__|$VERSION|g" -e "s|__COMMIT_SHA__|$GITHUB_SHA|g" "$f" | kubectl apply -f -
+          done
+          kubectl rollout status deployment/recetas-svc -n recetas --timeout=300s
+          kubectl rollout history deployment/recetas-svc -n recetas
+
+      - name: Verificacion post-deploy
+        run: |
+          for i in $(seq 1 30); do
+            HOST=$(kubectl get svc recetas-svc -n recetas -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            [ -n "$HOST" ] && curl -fsS -m 5 "http://$HOST/actuator/health" | grep -q '"status":"UP"' && break
+            echo "Esperando el Load Balancer ($i)..."; sleep 10
+          done
+          curl -fsS -m 5 "http://$HOST/actuator/health" | grep -q '"status":"UP"'
+          echo "APP_URL=http://$HOST" >> "$GITHUB_ENV"
+          # El nombre del Load Balancer es la primera parte de su DNS (lo usan las metricas AWS/ELB)
+          echo "ELB_NAME=${HOST%%-*}" >> "$GITHUB_ENV"
+
+      - name: Configurar observabilidad en CloudWatch (alarmas, SNS y dashboard)
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: bash monitoring/configurar-cloudwatch.sh
+
+      - name: Publicar cobertura y tiempo de despliegue en CloudWatch
+        env:
+          COBERTURA: ${{ needs.test-and-coverage.outputs.cobertura }}
+        run: |
+          DURACION=$(( $(date +%s) - INICIO ))
+          aws cloudwatch put-metric-data --namespace Recetas/CICD --metric-name CoberturaPruebas \
+            --dimensions Servicio=recetas-svc --unit Percent --value "${COBERTURA:-0}"
+          aws cloudwatch put-metric-data --namespace Recetas/CICD --metric-name TiempoDespliegue \
+            --dimensions Servicio=recetas-svc --unit Seconds --value "$DURACION"
+          echo "Cobertura: ${COBERTURA}% | Tiempo de despliegue: ${DURACION}s"
+
+      - name: Resumen y logs del despliegue
+        if: always()
+        run: |
+          mkdir -p logs-eks
+          kubectl get pods -n recetas -o wide > logs-eks/pods.txt 2>&1 || true
+          kubectl logs -n recetas -l app=recetas-svc --tail=300 --prefix > logs-eks/recetas-svc.log 2>&1 || true
+          {
+            echo "## Despliegue EKS ${VERSION}"
+            echo "| Campo | Valor |"
+            echo "|---|---|"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Imagen | \`${IMAGE:-n/a}\` |"
+            echo "| Microservicio | ${APP_URL:-n/a} |"
+            echo "| Dashboard | CloudWatch > Paneles > Recetas-DevOps |"
+            echo ""
+            echo '```'
+            cat logs-eks/pods.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir logs del despliegue
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-eks-${{ env.VERSION }}
+          path: logs-eks/
