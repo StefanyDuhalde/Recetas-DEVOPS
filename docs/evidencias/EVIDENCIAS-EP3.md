@@ -19,6 +19,9 @@ Grupo de nodos `ng-recetas`:
 Nodo en estado `Ready`:
 ![Nodos](ep3-eks-nodos.png)
 
+Complemento Amazon CloudWatch Observability activo en el clúster:
+![Complemento CloudWatch](ep3-eks-complemento-cloudwatch.png)
+
 Pipeline completo en `main`, desplegado por el pipeline:
 ![Pipeline con deploy EKS](ep3-pipeline-eks.png)
 
@@ -27,8 +30,11 @@ Summary del despliegue (commit, imagen en ECR y URL del microservicio):
 
 ## IE1 — Monitoreo
 
-Container Insights: CPU, memoria, nodos y pods:
+Container Insights: CPU, memoria, nodos y pods del clúster:
 ![Container Insights](ep3-container-insights.png)
+
+Uso de CPU y memoria de los pods del microservicio (namespace `recetas`):
+![Container Insights pods](ep3-container-insights-pods.png)
 
 Logs del microservicio en CloudWatch Logs:
 ![Logs](ep3-logs.png)
@@ -38,7 +44,12 @@ Alarmas configuradas:
 
 Caída provocada: la alarma de disponibilidad se activa y llega el correo:
 ![Alarma de disponibilidad](ep3-alarma-disponibilidad.png)
+![Dashboard durante la caída](ep3-dashboard-caida.png)
 ![Correo de alarma](ep3-correo-alarma.png)
+
+Servicio restaurado: la disponibilidad vuelve a 1 y la alarma vuelve a OK:
+![Dashboard recuperado](ep3-dashboard-recuperacion.png)
+![Correo de recuperación](ep3-correo-recuperacion.png)
 
 ## IE3 — Dashboard
 
@@ -63,6 +74,12 @@ Auditoría propia aprobada:
 
 Producción protegida: el deploy espera la aprobación de un revisor:
 ![Aprobación](ep3-aprobacion.png)
+
+Snyk detectó vulnerabilidades críticas nuevas y detuvo el pipeline:
+![Freno por Snyk](ep3-freno-snyk.png)
+
+El Quality Gate de SonarQube falló y detuvo el pipeline:
+![Freno por SonarQube](ep3-freno-sonarqube.png)
 
 Falla inyectada (secreto falso): pipeline en rojo y deploy *skipped*:
 ![Pipeline detenido](ep3-freno-pipeline.png)
