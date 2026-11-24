@@ -83,12 +83,12 @@ aws eks create-nodegroup --cluster-name recetas-eks --nodegroup-name ng-recetas 
 
 | Panel | Qué observamos | Decisión | Acción |
 |-------|----------------|----------|--------|
-| Uso de CPU de los pods |   |   |   |
-| Uso de memoria de los pods |   |  |  |
-| Errores 5xx |  |  |  |
-| Cobertura de pruebas |  |  |  |
-| Tiempo de despliegue |  |  |  |
-| Disponibilidad |  |  |  |
+| Uso de CPU de los pods | ¿Qué porcentaje de CPU utilizan los pods?  | ¿Es necesario optimizar o mantener la configuración?  | Revisar límites de CPU o mantenerlos.  |
+| Uso de memoria de los pods | ¿Cuánta memoria están utilizando?  | ¿Los recursos actuales son suficientes? | Ajustar memoria si es necesario. |
+| Errores 5xx | ¿Se registraron errores del servidor? | ¿El servicio está funcionando correctamente? | Revisar logs y corregir errores. |
+| Cobertura de pruebas | ¿Qué porcentaje de código está cubierto? | ¿La cobertura es suficiente? | 	Agregar pruebas donde falten. |
+| Tiempo de despliegue | ¿Cuánto demora el pipeline? | ¿El tiempo es aceptable? | Optimizar etapas si corresponde. |
+| Disponibilidad | ¿El servicio estuvo disponible? | 	¿Se mantiene estable? | Configurar alarmas y revisar incidentes. |
 
 ## Políticas de cumplimiento
 
