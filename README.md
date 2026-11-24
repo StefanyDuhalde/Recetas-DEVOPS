@@ -111,9 +111,25 @@ Las puertas son **secuenciales** (`needs`): si una falla, todas las siguientes �
 Evidencia de la falla inyectada (rama `demo/secreto-falso`): [EVIDENCIAS-EP3.md](docs/evidencias/EVIDENCIAS-EP3.md#ie6--freno-del-pipeline).
 
 ## Uso de Inteligencia Artificial (EP3)
- *FALTA DECLARACION DE IA!!!*
+Durante el desarrollo de la evaluación se utilizó ChatGPT, Geminis, Cloud como herramienta de apoyo para resolver dudas técnicas, comprender algunos conceptos relacionados con DevOps y organizar la documentación del proyecto.
+
+Su utilización estuvo orientada principalmente a:
+
+Comprender conceptos relacionados con Kubernetes, monitoreo y procesos CI/CD.
+
+Resolver dudas sobre comandos Git y administración de ramas.
+
+Apoyar la organización y revisión de la documentación del proyecto.
+
+Aclarar conceptos relacionados con las herramientas utilizadas durante la implementación.
 
 ## Reflexiones individuales (EP3)
+### Reflexion Taís Orellana
+
+Durante el desarrollo de esta evaluación pude aprender más sobre cómo se trabaja con herramientas DevOps y la importancia de integrar distintos procesos dentro de un proyecto. Una de las cosas que más me ayudó fue comprender mejor cómo funcionan herramientas como Docker, Kubernetes, AWS y GitHub Actions, y cómo se relacionan para realizar despliegues y monitorear una aplicación. También pude entender la importancia de revisar los errores, las métricas y la seguridad para mantener un sistema funcionando correctamente.
+
+Para mi esta experiencia fue importante porque me permitió conocer herramientas que no había utilizado en tanta profundidad y enfrentar nuevos desafíos durante el desarrollo del proyecto. Además, aprendí que trabajar con DevOps no consiste solamente en desarrollar una aplicación, sino también en preocuparse de su funcionamiento, seguridad y mantenimiento. Sin duda, son conocimientos que me servirán para seguir creciendo profesionalmente en el área de informática.
+
  *FALTAN REFLEXIONES!!!*
 
 
