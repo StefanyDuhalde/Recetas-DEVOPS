@@ -9,6 +9,147 @@ Microservicio correspondiente al **caso caso07 — MediCare** (Telemedicina) de 
 | Calidad | JaCoCo cobertura LINE 100% · Cucumber (BDD) alineado a endpoints REST |
 | Entrega | Docker / Docker Compose |
 
+
+# EP3 — Observabilidad y entornos reales
+
+## Mapa de evaluación EP3
+
+| Indicador | Qué se implementó | Dónde verlo |
+|-----------|-------------------|-------------|
+| **IE1** — Monitoreo | Amazon CloudWatch: CPU/memoria (Container Insights), errores 5xx y disponibilidad (Load Balancer), logs del microservicio (CloudWatch Logs), alarmas con correo (SNS) | [`monitoring/`](monitoring) · [Cómo verificar el monitoreo](#cómo-verificar-el-monitoreo) |
+| **IE2** — Kubernetes en la nube | Amazon EKS 1.32 (AWS Academy). El pipeline publica la imagen en ECR, despliega con `kubectl apply` y configura CloudWatch | [`k8s/`](k8s) · job `deploy-eks` |
+| **IE3** — Dashboard | Dashboard `Recetas-DevOps` como código: CPU/memoria, errores 5xx, cobertura y tiempo de despliegue | [`dashboard-recetas.json`](monitoring/dashboard-recetas.json) |
+| **IE4** — Decisiones | Mapa del pipeline, por qué cada herramienta, panel → decisión → acción | [Decisiones técnicas](#decisiones-técnicas-con-los-datos) |
+| **IE5** — Cumplimiento | SonarQube (quality gate) + branch protection + auditoría propia | [Políticas](#políticas-de-cumplimiento) · [`audit/`](audit) |
+| **IE6** — Freno | Puertas secuenciales + producción con revisores + falla inyectada | [Freno del pipeline](#freno-del-pipeline) · [Evidencias](docs/evidencias/EVIDENCIAS-EP3.md) |
+
+## Mapa del pipeline (EP2 + EP3)
+
+```mermaid
+flowchart LR
+    A[Push / PR] --> B[Snyk SAST + SCA]
+    B --> C[Auditoría propia<br/>secretos + CVE críticos]
+    C --> D[Pruebas + JaCoCo<br/>+ SonarQube Quality Gate]
+    D --> E[Build imagen Docker]
+    E --> F[Staging Docker Compose<br/>EP2]
+    F --> G{Aprobación<br/>produccion-eks}
+    G --> H[Imagen a ECR<br/>+ kubectl apply en EKS]
+    H --> I[CloudWatch<br/>alarmas, dashboard,<br/>cobertura y tiempo de deploy]
+```
+
+Bloques nuevos de la EP3: auditoría propia, SonarQube, aprobación, despliegue en EKS y CloudWatch.
+
+## Infraestructura
+
+- Clúster **EKS `recetas-eks`, Kubernetes 1.32**, creado desde la consola con el rol `LabRole`.
+- Nodos **Amazon Linux 2** (`AL2_x86_64`), creados con AWS CLI:
+
+```bash
+aws eks create-nodegroup --cluster-name recetas-eks --nodegroup-name ng-recetas \
+  --node-role arn:aws:iam::<CUENTA>:role/LabRole --subnets <SUBNETS> \
+  --ami-type AL2_x86_64 --capacity-type SPOT --instance-types t3.large \
+  --disk-size 20 --scaling-config minSize=1,maxSize=3,desiredSize=1
+```
+
+- Complemento **Amazon CloudWatch Observability** (Container Insights + logs).
+
+Se utlizó Kubernetes 1.32 con nodos Amazón Linux 2 porque en la versión que venía por defecto los nodos no se unían al clúster ya que la cuenta de Learner Lab de AWS tiene una restricción que bloquea una consulta que los nodos de Amazon Linux 2023 necesitan para arrancar. Por lo tanto utilizamos la Kubernetes 1.32 porque hasta ahí llega Amazón Linux 2
+
+## Cómo verificar el monitoreo
+
+1. Abrir el último run de `main` → job **Deploy a Kubernetes en AWS EKS (EP3)** → *Summary*: URL del microservicio.
+2. Consola AWS → **CloudWatch → Paneles → Recetas-DevOps**.
+3. **CloudWatch → Container Insights** → clúster `recetas-eks`.
+4. **CloudWatch → Alarmas**: las alarmas `recetas-*`.
+
+| Señal | Origen | Dónde se ve |
+|-------|--------|-------------|
+| Uso (CPU / memoria) | Container Insights (complemento de CloudWatch) | Dashboard · Container Insights |
+| Errores 5xx | Métrica `HTTPCode_Backend_5XX` del Load Balancer | Dashboard · alarma `recetas-errores-5xx` |
+| Disponibilidad | `HealthyHostCount` del Load Balancer + pods en ejecución | Dashboard · alarma `recetas-disponibilidad` |
+| Logs | CloudWatch Logs `/aws/containerinsights/recetas-eks/application` + métrica de líneas `ERROR` | Dashboard (tabla de logs) · alarma `recetas-errores-log` |
+| Cobertura y tiempo de despliegue | Publicadas por el pipeline (`put-metric-data`) | Dashboard |
+
+## Decisiones técnicas con los datos
+
+### Por qué cada herramienta
+
+EKS: para correr servicio en la nube con 2 réplicas. A diferencia de Docker Compose (que corre en una sola máquina), en Kubernetes si un pod falla este lo levanta de nuevo.
+
+ECR: para guardar la imagen del microservicio que construye el pipeline en AWS, ya que los nodos de EKS necesitan descargar la imagen de AWS
+
+CloudWatch: para monitorear el servicio, de esta manera podemos saber si el servicio está caído a través de las alarmas antes de que un usuario reclame.
+
+SonarQube: para resguardar la calidad del código. Se utilizó en cada PR para revisarlo (detectar vulnerabilidades y malas prácticas) y bloquear el pipeline si el código no pasaba el Quality Gate. En nuestro caso, detectó versiones sin fijar de Snyk.
+
+Auditoría propia: auditoría que revisa los documentos en busca de secretos o cosas que parezcan credenciales, para evitar la exposición de ellas en el repositorio público, y vulnerabilidades críticas en las librerías a través de Snyk, para evitar el despliegue del microservicio con librerías con fallas de seguridad graves y conocidas. En nuestro caso se evidenció con el demo del secreto falso, donde se subió un archivo con contraseñas de AWS inventadas y la auditoría lo detectó y detuvo el pipeline.
+
+Branch protection: para exigir PR y los checks en verde antes de hacer merge, y de esa forma que nadie pueda subir código directo a main ni saltarse los controles.
+
+
+
+### Panel → decisión → acción
+
+| Panel | Qué observamos | Decisión | Acción |
+|-------|----------------|----------|--------|
+| Uso de CPU de los pods | Se ve que en un inicio ocupan mucho CPU (aprox 15% del nodo total y 60% del límite de cada pod) al momento de hacerse el deployment, pero luego cuando ya está arriba el servicio, la CPU baja a casi 0  | El límite está bien dimensionado, ya que le sobra todavía 40% del límite de cada pod, y luego el uso de la CPU es mínimo, casi inexistente.  | Se mantiene la configuración.  |
+| Uso de memoria de los pods | Se ve que se ocupa memoria desde el momento en que se levanta el servicio, esto ya que java reserva espacio. Del total del nodo es solo un 3-4%, mientras que del límite de cada pod es alrededor de un 50%  |Los recursos actuales son suficientes,  ya que queda aprox. el 50% disponible de cada pod para hacer uso, lejos del límite superior. | Se decide no ajustar la memoria. |
+| Errores 5xx | Se observa que hubo peticiones pero no errores 5xx (que son errores de servidor) | El servicio está funcionando correctamente | Se mantiene todo como está. De haber tenido errores 5xx, habríamos tenido que revisar logs y corregir errores. |
+| Cobertura de pruebas | Está cubierto el 100% del código. | Cobertura más que suficiente. Nuestro pipeline exige un mínimo de 70% o JaCoCo lo detendrá. | Dejar todo como está. |
+| Tiempo de despliegue | el despliegue a EKS demoró 3-4 minutos. | Tiempo aceptable. Son un par de minutos acorde al tamaño del proyecto. | Dejar todo como está. |
+| Disponibilidad | Al forzar una caída, la alarma de disponibilidad se encendió y llegó un correo de notificación. En el dashboard podía observarse que en la métrica el destino saludable pasó de 1 a 0 y el no saludable de 0 a 1| La alarma cumplió su función, está bien implementada.  | Restaurar el servicio para ver cómo cambian los gráficos. La métrica vuelve a 1 destino saludable y 0 no saludables. Llega un correo de notificación de que la alarma vuelve a estar en buen estado. |
+
+## Políticas de cumplimiento
+
+| Política | Herramienta | Verificación |
+|----------|-------------|--------------|
+| Código con calidad y seguridad mínima | **SonarQube Cloud** (Quality Gate) | Paso *SonarQube Cloud* del job de pruebas: si el gate no pasa, el job falla (`sonar.qualitygate.wait=true`) |
+| Nadie integra a `main` sin PR ni controles | **Branch protection** (ruleset de `main`) | PR obligatorio + status checks en verde; GitHub bloquea el merge si no |
+| Sin secretos en el repositorio | **Auditoría propia** [`audit/audit.sh`](audit/audit.sh) | Job *Auditoria de Cumplimiento*: falla y deja `audit-report.md` |
+| Sin CVE críticos en dependencias | **Auditoría propia** (Snyk `--severity-threshold=critical`) | Ídem |
+| Sin vulnerabilidades HIGH/CRITICAL (EP2) | **Snyk** SAST + SCA | Job *DevSecOps* |
+| Producción solo con aprobación | **Environment `produccion-eks`** con revisores | El deploy a EKS espera la aprobación de un revisor |
+| Logs disponibles para auditoría | **CloudWatch Logs** (retención 7 días) | `monitoring/configurar-cloudwatch.sh` |
+
+## Freno del pipeline
+
+Las puertas son **secuenciales** (`needs`): si una falla, todas las siguientes —incluido el deploy— quedan *skipped*.
+
+`Snyk → Auditoría → Pruebas + SonarQube → Build → Staging → (aprobación) → Deploy EKS`
+
+Evidencia de la falla inyectada (rama `demo/secreto-falso`): [EVIDENCIAS-EP3.md](docs/evidencias/EVIDENCIAS-EP3.md#ie6--freno-del-pipeline).
+
+## Uso de Inteligencia Artificial (EP3)
+Durante el desarrollo de la evaluación se utilizó ChatGPT, Geminis, Claude como herramienta de apoyo para resolver dudas técnicas, comprender algunos conceptos relacionados con DevOps y organizar la documentación del proyecto.
+
+Su utilización estuvo orientada principalmente a:
+
+Comprender conceptos relacionados con Kubernetes, monitoreo y procesos CI/CD.
+
+Resolver dudas sobre comandos Git y administración de ramas.
+
+Apoyar la organización y revisión de la documentación del proyecto.
+
+Aclarar conceptos relacionados con las herramientas utilizadas durante la implementación.
+
+## Reflexiones individuales (EP3)
+### Reflexion Taís Orellana
+
+Durante el desarrollo de esta evaluación pude aprender más sobre cómo se trabaja con herramientas DevOps y la importancia de integrar distintos procesos dentro de un proyecto. Una de las cosas que más me ayudó fue comprender mejor cómo funcionan herramientas como Docker, Kubernetes, AWS y GitHub Actions, y cómo se relacionan para realizar despliegues y monitorear una aplicación. También pude entender la importancia de revisar los errores, las métricas y la seguridad para mantener un sistema funcionando correctamente.
+
+Para mi esta experiencia fue importante porque me permitió conocer herramientas que no había utilizado en tanta profundidad y enfrentar nuevos desafíos durante el desarrollo del proyecto. Además, aprendí que trabajar con DevOps no consiste solamente en desarrollar una aplicación, sino también en preocuparse de su funcionamiento, seguridad y mantenimiento. Sin duda, son conocimientos que me servirán para seguir creciendo profesionalmente en el área de informática.
+
+### Reflexion Stefany Duhalde
+
+Este proyecto me ayudó mucho a comprender qué es lo que pasa cuando un servicio de aws se cae: con CloudWatch se encienden alarmas, se envían correos informando el estado de estos, y se pueden observar con métricas o gráficos minuto a minuto la CPU, memorias, instancias funcionando, etc, y también se pueden ver los registros (logs).
+
+Por otro lado, también pude evidenciar la importancia de SonarQube: al intentar hacer un Pull Request en GitHub y ver cómo iban avanzando las verificaciones, si SonarQube consideraba que había una línea de código que podría afectar a la seguridad del programa, aparecían issues en SonarCloud y los calificaba de tipo bajo, medio o alto, junto a su justificación, dándonos la opción de aceptar el error junto a una justificación en caso de que consideremos que no sea de vital importancia. Esto demuestra lo bien estructurado y filtrado que puede quedar un proceso de CI/CD, ya que difícilmente van a pasar vulnerabilidades o malas prácTicas a la rama main y de esa manera se mantendrá en mejor medida la integridad de la aplicación.
+
+Mi contribución fue implementar CloudWatch, conectar el repositorio con SonarCloud, crear el clúster EKS y verificar que todo esté en verde para lograr el deploy final. 
+
+Si bien me tocó batallar mucho con SonarQube, es esto mismo lo que me hizo comprender su importancia a la hora de querer integrar código nuevo a un proyecto. Es una herramienta que no conocía y que con práctica podría llegar a ser un gran aporte a mi futuro profesional, ya que lograría crear aplicaciones más pulcras y seguras.
+
+
 ## Entrega EP2 — Mapa de evaluación
 
 | Indicador | Qué se implementó | Dónde verlo |
